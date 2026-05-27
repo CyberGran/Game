@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lector Robótico Nítido y Homogéneo</title>
+  <style>
+
+  </style>
+</head>
+<body>
+
+ 
+    <div class="container">
+    <div id="textContent"></div>
+    <div class="botones">
+      <button id="btnEscuchar">🔊 Hablar</button>
+      <button id="btnDetener">🛑 Detener</button>
+    </div>
+  </div>
+
+  <script>
+    var bloqueTextoActual = "Eje vital del Petare antiguo, era el corazón comercial histórico del casco colonial. Sus fachadas tradicionales albergan una centenaria actividad de mercaderes y artesanos, consolidándose como una  principal arteria económica  de la época.";  
+
+    const textContentDiv = document.getElementById('textContent');
+    textContentDiv.textContent = bloqueTextoActual;
+
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    let contextoAudio;
+    let gananciaMaestra;
+
+    const vocales = {
+      'A': { f1: 750, f2: 1200 },
+      'E': { f1: 500, f2: 1800 },
+      'I': { f1: 300, f2: 2300 },
+      'O': { f1: 600, f2: 900 },
+      'U': { f1: 350, f2: 800 }
+    };
+
+    function numeroALetras(num) {
+      const unidades = ['', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve'];
+      const deces = ['', 'diez', 'veinte', 'treinta', 'cuarenta', 'cincuenta', 'sesenta', 'setenta', 'ochenta', 'noventa'];
+      const onceAQuince = ['diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'dieciseis', 'diecisiete', 'dieciocho', 'diecinueve'];
+      const veintes = ['veinte', 'veintiuno', 'veintidos', 'veintitres', 'veinticuatro', 'veinticinco', 'veintiseis', 'veintisiete', 'veintiocho', 'veintinueve'];
+      const cientos = ['', 'cien', 'doscientos', 'trescientos', 'cuatrocientos', 'quinientos', 'seiscientos', 'setecientos', 'ochocientos', 'novecientos'];
+
+      if (num === 0) return 'cero';
+      let letras = '';
+
+      if (num >= 1000) {
+        let mil = Math.floor(num / 1000);
+        letras += (mil === 1 ? 'mil ' : numeroALetras(mil) + ' mil ');
+        num %= 1000;
+      }
+      if (num >= 100) {
+        let cien = Math.floor(num / 100);
+        if (cien === 1 && num % 100 > 0) letras += 'ciento ';
+        else letras += cientos[cien] + ' ';
+        num %= 100;
+      }
+      if (num >= 20 && num <= 29) {
+        letras += veintes[num - 20] + ' ';
+        num = 0;
+      } else if (num >= 10 && num <= 19) {
+        letras += onceAQuince[num - 10] + ' ';
+        num = 0;
+      } else if (num >= 30) {
+        let dec = Math.floor(num / 10);
+        letras += deces[dec];
+        num %= 10;
+        if (num > 0) letras += ' y ';
+      }
+      if (num > 0) letras += unidades[num];
+      return letras.trim();
+    }
+
+    function preprocesarTexto(texto) {
+      let textoProcesado = texto.replace(/\d+/g, (match) => numeroALetras(parseInt(match)));
+      textoProcesado = textoProcesado.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); 
+      return textoProcesado;
+    }
+
+    function hablarVocal(vocal, tiempoInicio, duracion) {
+      const config = vocales[vocal] || vocales['A'];
+      const osc = contextoAudio.createOscillator();
+      const gainNode = contextoAudio.createGain();
+      
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(135, tiempoInicio);
+      osc.frequency.exponentialRampToValueAtTime(115, tiempoInicio + duracion);
+
+      const filtro1 = contextoAudio.createBiquadFilter();
+      filtro1.type = 'bandpass';
+      filtro1.frequency.setValueAtTime(config.f1, tiempoInicio);
+      filtro1.Q.setValueAtTime(5, tiempoInicio);
+
+      const filtro2 = contextoAudio.createBiquadFilter();
+      filtro2.type = 'bandpass';
+      filtro2.frequency.setValueAtTime(config.f2, tiempoInicio);
+      filtro2.Q.setValueAtTime(5, tiempoInicio);
+
+      gainNode.gain.setValueAtTime(0, tiempoInicio);
+      gainNode.gain.linearRampToValueAtTime(1.0, tiempoInicio + 0.03); 
+      gainNode.gain.setValueAtTime(1.0, tiempoInicio + duracion - 0.03);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, tiempoInicio + duracion);
+
+      osc.connect(filtro1);
+      osc.connect(filtro2);
+      filtro1.connect(gainNode);
+      filtro2.connect(gainNode);
+      gainNode.connect(gananciaMaestra);
+
+      osc.start(tiempoInicio);
+      osc.stop(tiempoInicio + duracion);
+    }
+
+    function hablarConsonanteLimpia(frecuencia, tiempoInicio, duracion) {
+      const osc = contextoAudio.createOscillator();
+      const gainNode = contextoAudio.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(frecuencia, tiempoInicio);
+
+      gainNode.gain.setValueAtTime(0, tiempoInicio);
+      gainNode.gain.linearRampToValueAtTime(0.6, tiempoInicio + 0.01);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, tiempoInicio + duracion);
+
+      osc.connect(gainNode);
+      gainNode.connect(gananciaMaestra);
+
+      osc.start(tiempoInicio);
+      osc.stop(tiempoInicio + duracion);
+    }
+
+    function procesarYLeerTexto() {
+      if (contextoAudio && contextoAudio.state !== 'closed') {
+        contextoAudio.close();
+      }
+
+        contextoAudio = new AudioContext();
+        gananciaMaestra = Gateway = contextoAudio.createGain();
+        gananciaMaestra.gain.setValueAtTime(3.8, contextoAudio.currentTime);
+        gananciaMaestra.connect(contextoAudio.destination);
+  
+
+      let tiempoActual = contextoAudio.currentTime;
+      const velocidadBase = 0.14;
+      
+      const textoLimpio = preprocesarTexto(bloqueTextoActual).toUpperCase();
+
+      for (let i = 0; i < textoLimpio.length; i++) {
+        const letra = textoLimpio[i];
+
+        if (letra === ' ') {
+          tiempoActual += velocidadBase * 1.4; 
+        } 
+        else if (['A', 'E', 'I', 'O', 'U'].includes(letra)) {
+          hablarVocal(letra, tiempoActual, velocidadBase * 1.1);
+          tiempoActual += (velocidadBase * 1.1) + 0.01; 
+        } 
+        else if (letra === 'Ñ') {
+          hablarConsonanteLimpia(350, tiempoActual, velocidadBase * 0.4);
+          tiempoActual += (velocidadBase * 0.3);
+          hablarVocal('I', tiempoActual, velocidadBase * 0.4);
+          tiempoActual += (velocidadBase * 0.4);
+        }
+        else if (['M', 'N', 'L', 'R'].includes(letra)) {
+          hablarConsonanteLimpia(95, tiempoActual, velocidadBase * 0.5);
+          tiempoActual += (velocidadBase * 0.5);
+        }
+        else if (['S', 'Z', 'F', 'X'].includes(letra)) {
+          // CORRECCIÓN: Bajamos la frecuencia de 2600Hz a 1200Hz para eliminar el sonido de pajarito agudo
+          hablarConsonanteLimpia(1200, tiempoActual, velocidadBase * 0.5);
+          tiempoActual += (velocidadBase * 0.5);
+        }
+        else if (['H'].includes(letra)) {
+          tiempoActual += velocidadBase * 0.15;
+        }
+        else {
+          // CORRECCIÓN: Bajamos de 550Hz a 380Hz para suavizar las oclusivas (P, T, C, K, B, D)
+          hablarConsonanteLimpia(380, tiempoActual, velocidadBase * 0.25);
+          tiempoActual += (velocidadBase * 0.25);
+        }
+      }
+    }
+	
+	    // --- FUNCIÓN PARA INTERRUMPIR LA LECTURA ---
+    function detenerLectura() {
+      if (contextoAudio && contextoAudio.state !== 'closed') {
+        contextoAudio.close(); // Apaga el circuito de audio al instante
+      }
+    }
+
+    function cambiarBloqueTexto(nuevoTexto) {
+      bloqueTextoActual = nuevoTexto;
+      textContentDiv.textContent = nuevoTexto;
+    }
+
+    cambiarBloqueTexto(bloqueTextoActual);
+
+    document.getElementById('btnEscuchar').addEventListener('click', procesarYLeerTexto);  
+	document.getElementById('btnDetener').addEventListener('click', detenerLectura);
+  </script>
+
+</body>
+</html>
